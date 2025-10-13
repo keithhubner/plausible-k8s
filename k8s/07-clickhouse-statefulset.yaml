@@ -28,14 +28,6 @@ spec:
             configMapKeyRef:
               name: plausible-config
               key: CLICKHOUSE_DB
-        - name: CLICKHOUSE_USER
-          value: "plausible"
-        - name: CLICKHOUSE_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: plausible-secrets
-              key: CLICKHOUSE_PASSWORD
-              optional: true
         volumeMounts:
         - name: clickhouse-storage
           mountPath: /var/lib/clickhouse
