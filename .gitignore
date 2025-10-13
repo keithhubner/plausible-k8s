@@ -1,0 +1,29 @@
+# Kubernetes secrets (never commit these)
+*-secrets.yaml
+secrets/
+*.secret
+
+# Kubeconfig files
+kubeconfig
+*.kubeconfig
+.kube/
+
+# Backup files
+*.sql
+*.backup
+*.bak
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.log

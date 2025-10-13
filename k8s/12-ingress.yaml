@@ -1,0 +1,31 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: plausible-ingress
+  namespace: plausible
+  annotations:
+    # Enable cert-manager for automatic TLS certificates
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+
+    # Traefik HTTPS redirect middleware
+    traefik.ingress.kubernetes.io/router.middlewares: plausible-https-redirect@kubernetescrd
+
+    # Lower priority than challenge solver ingresses (10000) to allow ACME challenges
+    traefik.ingress.kubernetes.io/router.priority: "100"
+spec:
+  ingressClassName: traefik
+  tls:
+  - hosts:
+    - plausible.jankylabs.co.uk
+    secretName: plausible-tls
+  rules:
+  - host: plausible.jankylabs.co.uk
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: plausible
+            port:
+              number: 8000

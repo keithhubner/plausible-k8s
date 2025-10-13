@@ -1,0 +1,164 @@
+name: Deploy Plausible to Kubernetes
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Configure kubectl
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Verify cluster connection
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Create namespace if not exists
+        run: |
+          kubectl create namespace plausible --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create/Update secrets
+        run: |
+          # Create secrets from GitHub secrets
+          kubectl create secret generic plausible-secrets \
+            --from-literal=BASE_URL="${{ secrets.BASE_URL }}" \
+            --from-literal=SECRET_KEY_BASE="${{ secrets.SECRET_KEY_BASE }}" \
+            --from-literal=TOTP_VAULT_KEY="${{ secrets.TOTP_VAULT_KEY }}" \
+            --from-literal=POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" \
+            --from-literal=CLICKHOUSE_PASSWORD="${{ secrets.CLICKHOUSE_PASSWORD }}" \
+            --from-literal=DATABASE_URL="postgresql://plausible:${{ secrets.POSTGRES_PASSWORD }}@postgres:5432/plausible" \
+            --from-literal=CLICKHOUSE_DATABASE_URL="http://clickhouse:8123/plausible_events" \
+            --from-literal=ADMIN_USER_EMAIL="${{ secrets.ADMIN_USER_EMAIL }}" \
+            --from-literal=ADMIN_USER_NAME="${{ secrets.ADMIN_USER_NAME }}" \
+            --from-literal=ADMIN_USER_PWD="${{ secrets.ADMIN_USER_PWD }}" \
+            --from-literal=SMTP_HOST_ADDR="${{ secrets.SMTP_HOST_ADDR }}" \
+            --from-literal=SMTP_HOST_PORT="${{ secrets.SMTP_HOST_PORT }}" \
+            --from-literal=SMTP_USER_NAME="${{ secrets.SMTP_USER_NAME }}" \
+            --from-literal=SMTP_USER_PWD="${{ secrets.SMTP_USER_PWD }}" \
+            --from-literal=SMTP_HOST_SSL_ENABLED="${{ secrets.SMTP_HOST_SSL_ENABLED }}" \
+            --namespace=plausible \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply ConfigMaps
+        run: |
+          kubectl apply -f k8s/02-configmap.yaml -n plausible
+
+      - name: Deploy PostgreSQL
+        run: |
+          kubectl apply -f k8s/03-postgres-pvc.yaml -n plausible
+          kubectl apply -f k8s/04-postgres-statefulset.yaml -n plausible
+          kubectl apply -f k8s/05-postgres-service.yaml -n plausible
+
+      - name: Wait for PostgreSQL to be ready
+        run: |
+          kubectl wait --for=condition=ready pod -l app=postgres \
+            -n plausible \
+            --timeout=300s
+
+      - name: Deploy ClickHouse
+        run: |
+          kubectl apply -f k8s/06-clickhouse-pvc.yaml -n plausible
+          kubectl apply -f k8s/07-clickhouse-statefulset.yaml -n plausible
+          kubectl apply -f k8s/08-clickhouse-service.yaml -n plausible
+
+      - name: Wait for ClickHouse to be ready
+        run: |
+          kubectl wait --for=condition=ready pod -l app=clickhouse \
+            -n plausible \
+            --timeout=300s
+
+      - name: Deploy Plausible application
+        run: |
+          kubectl apply -f k8s/09-plausible-deployment.yaml -n plausible
+          kubectl apply -f k8s/10-plausible-service.yaml -n plausible
+
+      - name: Deploy Ingress
+        run: |
+          kubectl apply -f k8s/11-https-redirect-middleware.yaml -n plausible
+          kubectl apply -f k8s/12-ingress.yaml -n plausible
+
+      - name: Wait for deployment rollout
+        run: |
+          kubectl rollout status deployment/plausible \
+            -n plausible \
+            --timeout=600s
+
+      - name: Verify deployment
+        run: |
+          echo "### Deployment Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Pods:**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          kubectl get pods -n plausible >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Services:**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          kubectl get svc -n plausible >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Ingress:**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          kubectl get ingress -n plausible >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Run smoke tests
+        run: |
+          # Wait a bit for the service to be fully ready
+          sleep 15
+
+          # Test health endpoint
+          echo "Testing health endpoint..."
+          for i in {1..10}; do
+            if kubectl exec -n plausible deployment/plausible -- curl -f http://localhost:8000/api/health; then
+              echo "Health check passed"
+              break
+            else
+              echo "Attempt $i failed, retrying..."
+              sleep 5
+            fi
+          done
+
+  notify:
+    name: Notify Deployment Status
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: always()
+
+    steps:
+      - name: Deployment Success
+        if: needs.deploy.result == 'success'
+        run: |
+          echo "### Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** https://plausible.jankylabs.co.uk" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Deployment Failed
+        if: needs.deploy.result == 'failure'
+        run: |
+          echo "### Deployment Failed!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check the logs above for details." >> $GITHUB_STEP_SUMMARY
+          exit 1

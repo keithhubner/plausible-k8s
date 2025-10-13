@@ -1,0 +1,161 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plausible
+  namespace: plausible
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: plausible
+  template:
+    metadata:
+      labels:
+        app: plausible
+    spec:
+      initContainers:
+      - name: wait-for-postgres
+        image: busybox:1.36
+        command: ['sh', '-c', 'until nc -z postgres 5432; do echo waiting for postgres; sleep 2; done;']
+      - name: wait-for-clickhouse
+        image: busybox:1.36
+        command: ['sh', '-c', 'until nc -z clickhouse 8123; do echo waiting for clickhouse; sleep 2; done;']
+      - name: db-init
+        image: ghcr.io/plausible/community-edition:latest
+        command:
+        - /bin/sh
+        - -c
+        - /entrypoint.sh db createdb && /entrypoint.sh db migrate
+        envFrom:
+        - configMapRef:
+            name: plausible-config
+        env:
+        - name: BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: plausible-secrets
+              key: BASE_URL
+        - name: SECRET_KEY_BASE
+          valueFrom:
+            secretKeyRef:
+              name: plausible-secrets
+              key: SECRET_KEY_BASE
+        - name: TOTP_VAULT_KEY
+          valueFrom:
+            secretKeyRef:
+              name: plausible-secrets
+              key: TOTP_VAULT_KEY
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: plausible-secrets
+              key: DATABASE_URL
+        - name: CLICKHOUSE_DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: plausible-secrets
+              key: CLICKHOUSE_DATABASE_URL
+      containers:
+      - name: plausible
+        image: ghcr.io/plausible/community-edition:latest
+        ports:
+        - containerPort: 8000
+          name: http
+        envFrom:
+        - configMapRef:
+            name: plausible-config
+        env:
+        - name: BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: plausible-secrets
+              key: BASE_URL
+        - name: SECRET_KEY_BASE
+          valueFrom:
+            secretKeyRef:
+              name: plausible-secrets
+              key: SECRET_KEY_BASE
+        - name: TOTP_VAULT_KEY
+          valueFrom:
+            secretKeyRef:
+              name: plausible-secrets
+              key: TOTP_VAULT_KEY
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: plausible-secrets
+              key: DATABASE_URL
+        - name: CLICKHOUSE_DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: plausible-secrets
+              key: CLICKHOUSE_DATABASE_URL
+        - name: ADMIN_USER_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: plausible-secrets
+              key: ADMIN_USER_EMAIL
+              optional: true
+        - name: ADMIN_USER_NAME
+          valueFrom:
+            secretKeyRef:
+              name: plausible-secrets
+              key: ADMIN_USER_NAME
+              optional: true
+        - name: ADMIN_USER_PWD
+          valueFrom:
+            secretKeyRef:
+              name: plausible-secrets
+              key: ADMIN_USER_PWD
+              optional: true
+        - name: SMTP_HOST_ADDR
+          valueFrom:
+            secretKeyRef:
+              name: plausible-secrets
+              key: SMTP_HOST_ADDR
+              optional: true
+        - name: SMTP_HOST_PORT
+          valueFrom:
+            secretKeyRef:
+              name: plausible-secrets
+              key: SMTP_HOST_PORT
+              optional: true
+        - name: SMTP_USER_NAME
+          valueFrom:
+            secretKeyRef:
+              name: plausible-secrets
+              key: SMTP_USER_NAME
+              optional: true
+        - name: SMTP_USER_PWD
+          valueFrom:
+            secretKeyRef:
+              name: plausible-secrets
+              key: SMTP_USER_PWD
+              optional: true
+        - name: SMTP_HOST_SSL_ENABLED
+          valueFrom:
+            secretKeyRef:
+              name: plausible-secrets
+              key: SMTP_HOST_SSL_ENABLED
+              optional: true
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 5

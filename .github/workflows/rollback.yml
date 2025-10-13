@@ -1,0 +1,68 @@
+name: Rollback Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: 'Revision to rollback to (leave empty for previous)'
+        required: false
+        type: string
+
+jobs:
+  rollback:
+    name: Rollback to Previous Version
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+
+    steps:
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Configure kubectl
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Get current revision
+        id: current
+        run: |
+          echo "revision=$(kubectl rollout history deployment/plausible -n plausible | tail -2 | head -1 | awk '{print $1}')" >> $GITHUB_OUTPUT
+
+      - name: Rollback Plausible
+        run: |
+          if [[ -n "${{ inputs.revision }}" ]]; then
+            kubectl rollout undo deployment/plausible \
+              --to-revision=${{ inputs.revision }} \
+              -n plausible
+          else
+            kubectl rollout undo deployment/plausible \
+              -n plausible
+          fi
+
+      - name: Wait for rollback to complete
+        run: |
+          kubectl rollout status deployment/plausible \
+            -n plausible \
+            --timeout=600s
+
+      - name: Verify rollback
+        run: |
+          echo "### Rollback Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Revision:** ${{ inputs.revision || 'Previous' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Pod Status:**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          kubectl get pods -n plausible >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Test health endpoint
+        run: |
+          echo "Testing application health..."
+          sleep 10
+          kubectl exec -n plausible deployment/plausible -- curl -f http://localhost:8000/api/health
+          echo "Application is healthy after rollback"
