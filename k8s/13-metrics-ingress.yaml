@@ -1,0 +1,42 @@
+# Vanity analytics domain for passwordvaultgenerator.com.
+#
+# Serves the same Plausible instance from metrics.passwordvaultgenerator.com so
+# the tracking script is first-party to that site rather than a third-party host.
+#
+# Kept separate from 12-ingress.yaml, with its own TLS secret, so a failed
+# certificate issuance here cannot disturb the plausible.jankylabs.co.uk cert.
+#
+# Prerequisite: metrics.passwordvaultgenerator.com must resolve to the cluster
+# load balancer (74.220.17.4) before cert-manager can complete the HTTP-01
+# challenge.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: plausible-metrics-ingress
+  namespace: plausible
+  annotations:
+    # Enable cert-manager for automatic TLS certificates
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+
+    # Traefik HTTPS redirect middleware
+    traefik.ingress.kubernetes.io/router.middlewares: plausible-https-redirect@kubernetescrd
+
+    # Lower priority than challenge solver ingresses (10000) to allow ACME challenges
+    traefik.ingress.kubernetes.io/router.priority: "100"
+spec:
+  ingressClassName: traefik
+  tls:
+  - hosts:
+    - metrics.passwordvaultgenerator.com
+    secretName: plausible-metrics-tls
+  rules:
+  - host: metrics.passwordvaultgenerator.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: plausible
+            port:
+              number: 8000
