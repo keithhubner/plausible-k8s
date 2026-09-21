@@ -1,0 +1,52 @@
+# ClickHouse system log retention.
+#
+# ClickHouse ships these *_log tables with no TTL. Left at defaults they grow
+# without bound: on 2026-09-21 system.text_log alone had reached 440 million
+# rows / 26.5 GiB and the system tables together held 34.7 GiB of a 40Gi
+# volume. The disk filled, every write failed with NOT_ENOUGH_SPACE, and
+# Plausible silently dropped all analytics events for four months - it still
+# answered /api/event with 202 while the write buffer could not flush.
+#
+# text_log is off by default in stock ClickHouse and is the worst offender, so
+# it stays disabled here. The rest keep 3 days, which is ample for debugging
+# and bounds the total at a few hundred MiB.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clickhouse-log-config
+  namespace: plausible
+data:
+  log-retention.xml: |
+    <clickhouse>
+        <!-- Disable text_log entirely: not enabled in stock ClickHouse, and
+             it is what filled the volume. -->
+        <text_log remove="remove"/>
+
+        <query_log>
+            <ttl>event_date + INTERVAL 3 DAY DELETE</ttl>
+        </query_log>
+        <trace_log>
+            <ttl>event_date + INTERVAL 3 DAY DELETE</ttl>
+        </trace_log>
+        <metric_log>
+            <ttl>event_date + INTERVAL 3 DAY DELETE</ttl>
+        </metric_log>
+        <asynchronous_metric_log>
+            <ttl>event_date + INTERVAL 3 DAY DELETE</ttl>
+        </asynchronous_metric_log>
+        <part_log>
+            <ttl>event_date + INTERVAL 3 DAY DELETE</ttl>
+        </part_log>
+        <processors_profile_log>
+            <ttl>event_date + INTERVAL 3 DAY DELETE</ttl>
+        </processors_profile_log>
+        <error_log>
+            <ttl>event_date + INTERVAL 3 DAY DELETE</ttl>
+        </error_log>
+        <query_metric_log>
+            <ttl>event_date + INTERVAL 3 DAY DELETE</ttl>
+        </query_metric_log>
+        <asynchronous_insert_log>
+            <ttl>event_date + INTERVAL 3 DAY DELETE</ttl>
+        </asynchronous_insert_log>
+    </clickhouse>

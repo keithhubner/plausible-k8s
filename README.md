@@ -39,7 +39,8 @@ The deployment consists of:
 │   ├── 09-plausible-deployment.yaml
 │   ├── 10-plausible-service.yaml
 │   ├── 11-https-redirect-middleware.yaml
-│   └── 12-ingress.yaml
+│   ├── 12-ingress.yaml
+│   └── 14-clickhouse-log-config.yaml
 └── README.md
 ```
 

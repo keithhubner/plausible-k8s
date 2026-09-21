@@ -39,6 +39,10 @@ spec:
         - name: clickhouse-users
           mountPath: /etc/clickhouse-server/users.d
           readOnly: true
+        # Bounds the system.*_log tables - see 14-clickhouse-log-config.yaml
+        - name: clickhouse-log-config
+          mountPath: /etc/clickhouse-server/config.d
+          readOnly: true
         resources:
           requests:
             memory: "512Mi"
@@ -65,3 +69,6 @@ spec:
       - name: clickhouse-users
         configMap:
           name: clickhouse-users
+      - name: clickhouse-log-config
+        configMap:
+          name: clickhouse-log-config
