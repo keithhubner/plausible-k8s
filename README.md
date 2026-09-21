@@ -204,6 +204,12 @@ kubectl create secret generic plausible-secrets \
   --from-literal=CLICKHOUSE_DATABASE_URL="http://clickhouse:8123/plausible_events" \
   --namespace=plausible
 
+# Create the ClickHouse users config (referenced by 07-clickhouse-statefulset.yaml).
+# Not stored in this repo: it contains a <password> element and this repo is public.
+kubectl create configmap clickhouse-users \
+  --from-file=allow-remote.xml=./allow-remote.xml \
+  --namespace=plausible
+
 # Apply remaining manifests
 kubectl apply -f k8s/ -n plausible
 

@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: clickhouse
-        image: clickhouse/clickhouse-server:23.3-alpine
+        image: clickhouse/clickhouse-server:24.12-alpine
         ports:
         - containerPort: 8123
           name: http
@@ -31,6 +31,14 @@ spec:
         volumeMounts:
         - name: clickhouse-storage
           mountPath: /var/lib/clickhouse
+        # Supplies allow-remote.xml so Plausible can connect from another pod.
+        # The ConfigMap is created out of band and is deliberately not in this
+        # repo: it contains a <password> element and this repository is public.
+        #   kubectl create configmap clickhouse-users -n plausible \
+        #     --from-file=allow-remote.xml=<your-local-copy>
+        - name: clickhouse-users
+          mountPath: /etc/clickhouse-server/users.d
+          readOnly: true
         resources:
           requests:
             memory: "512Mi"
@@ -54,3 +62,6 @@ spec:
       - name: clickhouse-storage
         persistentVolumeClaim:
           claimName: clickhouse-pvc
+      - name: clickhouse-users
+        configMap:
+          name: clickhouse-users
