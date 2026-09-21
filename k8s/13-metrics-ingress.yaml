@@ -1,14 +1,19 @@
-# Vanity analytics domain for passwordvaultgenerator.com.
+# Vanity analytics domains.
 #
-# Serves the same Plausible instance from metrics.passwordvaultgenerator.com so
-# the tracking script is first-party to that site rather than a third-party host.
+# Each site measured by this Plausible instance gets a metrics.<site> host that
+# serves the same instance, so the tracking script and its /api/event endpoint
+# are first-party to the site rather than a third-party host. Content blockers
+# match the third-party host and the /api/event path; they do not match a
+# subdomain of the site being measured.
 #
-# Kept separate from 12-ingress.yaml, with its own TLS secret, so a failed
-# certificate issuance here cannot disturb the plausible.jankylabs.co.uk cert.
+# Each host is a separate Ingress with its own TLS secret, and all are kept out
+# of 12-ingress.yaml, so a failed certificate issuance for one cannot disturb
+# the others or the plausible.jankylabs.co.uk cert.
 #
-# Prerequisite: metrics.passwordvaultgenerator.com must resolve to the cluster
-# load balancer (74.220.17.4) before cert-manager can complete the HTTP-01
-# challenge.
+# Prerequisite: each host must resolve to the cluster load balancer
+# (74.220.17.4) before cert-manager can complete the HTTP-01 challenge.
+
+# passwordvaultgenerator.com
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -31,6 +36,38 @@ spec:
     secretName: plausible-metrics-tls
   rules:
   - host: metrics.passwordvaultgenerator.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: plausible
+            port:
+              number: 8000
+---
+# veganeat.co.uk
+#
+# Added after tracking silently recorded nothing from June 2026: visitors faded
+# from 450/month in March to 0 in June as blocker filter lists caught up with
+# the third-party host. Serving first-party from here restored it.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: plausible-metrics-veganeat-ingress
+  namespace: plausible
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    traefik.ingress.kubernetes.io/router.middlewares: plausible-https-redirect@kubernetescrd
+    traefik.ingress.kubernetes.io/router.priority: "100"
+spec:
+  ingressClassName: traefik
+  tls:
+  - hosts:
+    - metrics.veganeat.co.uk
+    secretName: plausible-metrics-veganeat-tls
+  rules:
+  - host: metrics.veganeat.co.uk
     http:
       paths:
       - path: /
