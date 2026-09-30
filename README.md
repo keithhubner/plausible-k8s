@@ -40,6 +40,7 @@ The deployment consists of:
 │   ├── 10-plausible-service.yaml
 │   ├── 11-https-redirect-middleware.yaml
 │   ├── 12-ingress.yaml
+│   ├── 13-metrics-ingress.yaml
 │   └── 14-clickhouse-log-config.yaml
 └── README.md
 ```
